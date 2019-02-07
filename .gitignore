@@ -1,6 +1,6 @@
 .env
 venv
-glow.pex
+gflow.pex
 
 .idea/misc.xml
 .idea/workspace.xml
