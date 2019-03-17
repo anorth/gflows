@@ -35,14 +35,15 @@ def main(argv):
     print(e.stderr, file=sys.stderr)
     sys.exit(e.returncode)
   except FlowError as e:
-    print(e.message, file=sys.stderr)
+    if e.message is not None:
+      print(e.message, file=sys.stderr)
     sys.exit(e.status)
   except KeyboardInterrupt:
     sys.exit(1)
 
 
 class FlowError(RuntimeError):
-  def __init__(self, message, status=1):
+  def __init__(self, message=None, status=1):
     self.message = message
     self.status = status
 
@@ -123,13 +124,13 @@ class GFlow:
     if pargs.no_verify:
       extra_args.append("--no-verify")
 
-    print("Pushing " + source + "to origin/" + target)
+    print("Pushing " + source + " to origin/" + target)
 
     # Push directly to origin, which will fail if not a fast-forward
     self._git_run("push", "origin", source + ":" + target, *extra_args)
-    # If successful, push the same thing locally, always skipping hooks
-    # self._git_run("push", ".", source + ":" + target, "--no-verify", *extra_args)
     self._git_run("fetch", "origin", "master")
+    # Equivalent, faster, maybe less safe: push the same thing locally
+    # self._git_run("push", ".", source + ":" + target, "--no-verify", *extra_args)
 
   def _current_branch(self) -> str:
     return self._git_cap("rev-parse", "--abbrev-ref", "HEAD").strip()
@@ -137,16 +138,16 @@ class GFlow:
   def _no_changes(self):
     """Raises FlowError if there are unstaged or uncommitted changes."""
     try:
-      self._git_run("diff", "--exit-code")
+      self._git_cap("diff", "--exit-code")
     except CalledProcessError:
-      self._git_run("status")
-      raise FlowError("Unstaged changes")
+      self._git_run("status", quiet=True)
+      raise FlowError()
 
     try:
-      self._git_run("diff", "--cached", "--exit-code")
+      self._git_cap("diff", "--cached", "--exit-code")
     except CalledProcessError:
-      self._git_run("status")
-      raise FlowError("Unstaged changes")
+      self._git_run("status", quiet=True)
+      raise FlowError()
 
   def _git_cap(self, *args) -> str:
     """
@@ -160,7 +161,7 @@ class GFlow:
       print(proc.stderr, file=sys.stderr)
     return proc.stdout
 
-  def _git_run(self, *args):
+  def _git_run(self, *args, quiet=False):
     """
     Runs git without capturing output (it goes to this process's stdout/stderr
 
@@ -173,7 +174,8 @@ class GFlow:
     else:
       echo = "> " + echo
 
-    print(echo)
+    if not quiet:
+      print(echo)
     subprocess.run(cmd, check=True)
 
 
