@@ -12,7 +12,6 @@ from subprocess import CalledProcessError
 # TODO
 # - update branch
 # - push review
-# - land changes
 
 def main(argv):
   flow = GFlow()
@@ -32,7 +31,8 @@ def main(argv):
   try:
     method(*args)
   except CalledProcessError as e:
-    print(e.stderr, file=sys.stderr)
+    if e.stderr:
+      print(e.stderr, file=sys.stderr)
     sys.exit(e.returncode)
   except FlowError as e:
     if e.message is not None:
@@ -60,6 +60,20 @@ class GFlow:
   def do_current_branch(self):
     """Prints the current branch name"""
     print(self._current_branch())
+
+  def do_up(self, *args):
+    """Fetches origin/master and rebases a branch."""
+    ap = ArgumentParser()
+    ap.add_argument("--on", help="Source branch to fetch and rebase on (defaults to master)")
+    ap.add_argument("branch", nargs='?', help="Branch name to update (defaults to current)")
+    pargs = ap.parse_args(args)
+
+    branch = pargs.branch or self._current_branch()
+    on = pargs.on or "master"
+
+    self._git_run("fetch", "origin", "+" + on + ":" + on)
+    if branch != on:
+      self._git_run("rebase", on)
 
   def do_publish(self, *args):
     """
