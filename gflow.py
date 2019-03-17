@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 def main(argv):
   flow = GFlow()
-  print(argv)
+  # print(argv)
   bin_name = Path(argv[0]).name
   method = flow.method(bin_name)
   args = argv[1:]
