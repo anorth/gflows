@@ -6,9 +6,10 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Callable, Optional
+from subprocess import CalledProcessError
+
 
 # TODO
-# - remove pex
 # - update branch
 # - push review
 # - land changes
@@ -30,11 +31,20 @@ def main(argv):
 
   try:
     method(*args)
-  except subprocess.CalledProcessError as e:
+  except CalledProcessError as e:
     print(e.stderr, file=sys.stderr)
     sys.exit(e.returncode)
+  except FlowError as e:
+    print(e.message, file=sys.stderr)
+    sys.exit(e.status)
   except KeyboardInterrupt:
     sys.exit(1)
+
+
+class FlowError(RuntimeError):
+  def __init__(self, message, status=1):
+    self.message = message
+    self.status = status
 
 
 class GFlow:
@@ -62,14 +72,13 @@ class GFlow:
 
     branch = pargs.branch or self._current_branch()
     if branch == 'master':
-      print("Refusing to publish master branch. Use git push directly")
-      sys.exit(1)
+      raise FlowError("Refusing to publish master branch, use git push directly.")
 
-    gargs = ["--force"]
+    extra_args = ["--force"]
     if pargs.no_verify:
-      gargs.append("--no-verify")
+      extra_args.append("--no-verify")
 
-    self._git_run("push", "origin", "{0}:{0}".format(branch), *gargs)
+    self._git_run("push", "origin", "{0}:{0}".format(branch), *extra_args)
 
   def do_unpublish(self, *args):
     """
@@ -78,7 +87,8 @@ class GFlow:
     """
     ap = ArgumentParser()
     ap.add_argument("--rm", action='store_true', help="Removes local branch too")
-    ap.add_argument("branches", nargs='*', default=(), help="Branch name to unpublish (defaults to current)")
+    ap.add_argument("branches", nargs='*', default=(),
+      help="Branch name to unpublish (defaults to current)")
     pargs = ap.parse_args(args)
 
     current_branch = self._current_branch()
@@ -97,14 +107,52 @@ class GFlow:
       if pargs.rm:
         self._git_run("branch", "-d", branch)
 
+  def do_land(self, *args):
+    """Lands changes on origin/master and updates local refs."""
+    self._no_changes()
+
+    ap = ArgumentParser()
+    ap.add_argument("--on", help="Target branch to land changes on (defaults to master)")
+    ap.add_argument("--no-verify", action='store_true', help="Skips pre-push hooks")
+    ap.add_argument("source", nargs='?', help="Ref name to land (defaults to HEAD)")
+    pargs = ap.parse_args(args)
+
+    source = pargs.source or "HEAD"
+    target = pargs.on or "master"
+    extra_args = []
+    if pargs.no_verify:
+      extra_args.append("--no-verify")
+
+    print("Pushing " + source + "to origin/" + target)
+
+    # Push directly to origin, which will fail if not a fast-forward
+    self._git_run("push", "origin", source + ":" + target, *extra_args)
+    # If successful, push the same thing locally, always skipping hooks
+    # self._git_run("push", ".", source + ":" + target, "--no-verify", *extra_args)
+    self._git_run("fetch", "origin", "master")
+
   def _current_branch(self) -> str:
     return self._git_cap("rev-parse", "--abbrev-ref", "HEAD").strip()
+
+  def _no_changes(self):
+    """Raises FlowError if there are unstaged or uncommitted changes."""
+    try:
+      self._git_run("diff", "--exit-code")
+    except CalledProcessError:
+      self._git_run("status")
+      raise FlowError("Unstaged changes")
+
+    try:
+      self._git_run("diff", "--cached", "--exit-code")
+    except CalledProcessError:
+      self._git_run("status")
+      raise FlowError("Unstaged changes")
 
   def _git_cap(self, *args) -> str:
     """
     Runs git and return stdout captured in a string.
 
-    Throws CalledProcessError if git exits with non-zero status.
+    Raises CalledProcessError if git exits with non-zero status.
     """
     cmd = ["git"] + list(args)
     proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -116,7 +164,7 @@ class GFlow:
     """
     Runs git without capturing output (it goes to this process's stdout/stderr
 
-    Throws CalledProcessError if git exists with non-zero status.
+    Raises CalledProcessError if git exists with non-zero status.
     """
     cmd = ["git"] + list(args)
     echo = ' '.join(cmd)
