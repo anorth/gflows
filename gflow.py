@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Requires Python 3.6 or later
-
+import re
 import subprocess
 import sys
 from argparse import ArgumentParser
@@ -10,8 +10,16 @@ from subprocess import CalledProcessError
 
 
 # TODO
-# - update branch
-# - push review
+# - add squash option to land
+# - add delete branch/s option to land
+# - pr
+# - "rm" delete local branch
+# - cleanup origin "git branch -r --merged master | grep anorth | sed 's/origin\///'  | xargs -n 1 git push --delete origin"
+# - count the diff stat size and append a description to PR title
+
+# Matches an origin URI and extracts project and repo name, e.g. "git@github.com:{org}/{repo}.git"
+_ORIGIN_PATTERN = re.compile('[\w.@-]+:([\w.-]+)/([\w.-]+)\.git')
+
 
 def main(argv):
   flow = GFlow()
@@ -80,25 +88,23 @@ class GFlow:
     Pushes a branch (default: the current branch) to origin, overwriting it unconditionally.
     Refuses to publish master.
     """
+    self._no_changes()
+
     ap = ArgumentParser()
     ap.add_argument("--no-verify", action='store_true', help="Skips pre-push hooks")
-    ap.add_argument("branch", nargs='?', help="Branch name to publish (defaults to current)")
+    ap.add_argument("source", nargs='?', help="Branch name to publish (defaults to current)")
     pargs = ap.parse_args(args)
 
-    branch = pargs.branch or self._current_branch()
-    if branch == 'master':
+    source = pargs.source or self._current_branch()
+    if source == 'master':
       raise FlowError("Refusing to publish master branch, use git push directly.")
 
-    extra_args = ["--force"]
-    if pargs.no_verify:
-      extra_args.append("--no-verify")
-
-    self._git_run("push", "origin", "{0}:{0}".format(branch), *extra_args)
+    self._push(source, pargs.no_verify)
 
   def do_unpublish(self, *args):
     """
     Deletes a branch from the origin unconditionally.
-    Refuses to unpublish master.
+    Refuses to delete master.
     """
     ap = ArgumentParser()
     ap.add_argument("--rm", action='store_true', help="Removes local branch too")
@@ -122,6 +128,34 @@ class GFlow:
       if pargs.rm:
         self._git_run("branch", "-d", branch)
 
+  def do_pr(self, *args):
+    """Publishes a branch and opens a pull request in-browser."""
+    self._no_changes()
+
+    ap = ArgumentParser()
+    ap.add_argument("--on", help="Target branch to compare changes with (defaults to master)")
+    ap.add_argument("--no-verify", action='store_true', help="Skips pre-push hooks")
+    ap.add_argument("source", nargs='?', help="Branch name to publish (defaults to current)")
+    pargs = ap.parse_args(args)
+
+    source = pargs.source or self._current_branch()
+    target = pargs.on or "master"
+    if source == 'master':
+      raise FlowError("Refusing to publish master branch.")
+
+
+    origin = self._git_cap("remote", "get-url", "origin")
+    org, repo = _ORIGIN_PATTERN.match(origin).group(1, 2)
+    first_commit_msg = self._git_cap("log", "{}...{}".format(source, target),  "-1",  "--reverse",
+      "--pretty=format:%s")
+
+    self._push(source, pargs.no_verify)
+
+    pr_url="https://github.com/{}/{}/compare/{}...{}?title={}".format(org, repo, target, source, first_commit_msg)
+    print(pr_url)
+    subprocess.run(["open", pr_url]) # For MacOS
+
+
   def do_land(self, *args):
     """Lands changes on origin/master and updates local refs."""
     self._no_changes()
@@ -132,22 +166,28 @@ class GFlow:
     ap.add_argument("source", nargs='?', help="Ref name to land (defaults to HEAD)")
     pargs = ap.parse_args(args)
 
-    source = pargs.source or "HEAD"
+    source = pargs.source or self._current_branch()
     target = pargs.on or "master"
     extra_args = []
     if pargs.no_verify:
       extra_args.append("--no-verify")
 
-    print("Pushing " + source + " to origin/" + target)
-
     # Push directly to origin, which will fail if not a fast-forward
     self._git_run("push", "origin", source + ":" + target, *extra_args)
-    self._git_run("fetch", "origin", "master")
+    # Pull back into the local
+    self._git_run("pull", "origin", target, "--ff-only")
     # Equivalent, faster, maybe less safe: push the same thing locally
     # self._git_run("push", ".", source + ":" + target, "--no-verify", *extra_args)
 
   def _current_branch(self) -> str:
     return self._git_cap("rev-parse", "--abbrev-ref", "HEAD").strip()
+
+  def _push(self, branch, no_verify=False):
+    extra_args = ["--force"]
+    if no_verify:
+      extra_args.append("--no-verify")
+
+    return self._git_run("push", "origin", "{0}:{0}".format(branch), *extra_args)
 
   def _no_changes(self):
     """Raises FlowError if there are unstaged or uncommitted changes."""
