@@ -1,5 +1,38 @@
 #!/usr/bin/env python3
 # Requires Python 3.6 or later
+"""
+Alex's GitHub workflow scripts.
+
+These scripts automate complicated or multiple-step git commands to implement the workflow
+of working on branches which are continually rebased, reviewed as a GitHub pull request, and
+landed by fast-forwarding master.
+
+Typical usage:
+  $ git checkout -b mybranch
+  ...work work work...
+  $ git commit -a
+  $ # pull master from origin and rebase this branch against it:
+  $ gflow up
+  $ # send a pull request for review
+  $ gflow pr
+  ... more work ...
+  $ # fetch yet more changes and publish updated PR
+  $ git commit -a
+  $ gflow up
+  $ gflow publish
+  $ # LGTM, let's land it
+  $ gflow land
+
+
+Upcoming features fixes:
+- add squash option to land
+- add delete branch/s option to land
+- count the diff stat size and append a description to PR title
+- add commands for chaining a rebase through branches
+- add "rm" command to delete remote+local branch
+- cleanup origin: "git branch -r --merged master | grep anorth | sed 's/origin\///'  | xargs -n 1 git push --delete origin"
+"""
+
 import re
 import subprocess
 import sys
@@ -9,25 +42,19 @@ from typing import Callable, Optional
 from subprocess import CalledProcessError
 
 
-# TODO
-# - add squash option to land
-# - add delete branch/s option to land
-# - pr
-# - "rm" delete local branch
-# - cleanup origin "git branch -r --merged master | grep anorth | sed 's/origin\///'  | xargs -n 1 git push --delete origin"
-# - count the diff stat size and append a description to PR title
-
 # Matches an origin URI and extracts project and repo name, e.g. "git@github.com:{org}/{repo}.git"
 _ORIGIN_PATTERN = re.compile('[\w.@-]+:([\w.-]+)/([\w.-]+)\.git')
 
 
 def main(argv):
   flow = GFlow()
-  # print(argv)
+
+  # Check if argv[0] matches the name of a command, such as when this file is symlinked in a bin
+  # directory as "up", "publish", "land" etc.
+  # Otherwise, the command name is the first argument.
   bin_name = Path(argv[0]).name
   method = flow.method(bin_name)
   args = argv[1:]
-
   if method is None and len(argv) > 1:
     method = flow.method(argv[1])
     args = argv[2:]
