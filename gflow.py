@@ -201,8 +201,9 @@ class GFlow:
 
     # Push directly to origin, which will fail if not a fast-forward
     self._git_run("push", "origin", source + ":" + target, *extra_args)
-    # Pull back into the local
-    self._git_run("pull", "origin", target, "--ff-only")
+    # Fetch back into the local
+    self._git_run("fetch", "origin", "{0}:{0}".format(target))
+
     # Equivalent, faster, maybe less safe: push the same thing locally
     # self._git_run("push", ".", source + ":" + target, "--no-verify", *extra_args)
 
