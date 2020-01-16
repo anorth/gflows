@@ -25,6 +25,7 @@ Typical usage:
 
 
 Upcoming features fixes:
+- add --help option to describe commands
 - add squash option to land
 - add delete branch/s option to land
 - count the diff stat size and append a description to PR title
@@ -126,7 +127,7 @@ class GFlow:
     if source == 'master':
       raise FlowError("Refusing to publish master branch, use git push directly.")
 
-    self._push(source, pargs.no_verify)
+    self._push(source, no_verify=pargs.no_verify, set_upstream=True)
 
   def do_unpublish(self, *args):
     """
@@ -210,10 +211,12 @@ class GFlow:
   def _current_branch(self) -> str:
     return self._git_cap("rev-parse", "--abbrev-ref", "HEAD").strip()
 
-  def _push(self, branch, no_verify=False):
-    extra_args = ["--force"]
+  def _push(self, branch, no_verify=False, set_upstream=False):
+    extra_args = ["--force-with-lease"]
     if no_verify:
       extra_args.append("--no-verify")
+    if set_upstream:
+      extra_args.append("--set-upstream")
 
     return self._git_run("push", "origin", "{0}:{0}".format(branch), *extra_args)
 
