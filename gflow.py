@@ -101,15 +101,19 @@ class GFlow:
     """Fetches origin/master and rebases a branch."""
     ap = ArgumentParser()
     ap.add_argument("--on", help="Source branch to fetch and rebase on (defaults to master)")
+    ap.add_argument("--interactive", "-i", action="store_true", help="Rebase interactively")
     ap.add_argument("branch", nargs='?', help="Branch name to update (defaults to current)")
     pargs = ap.parse_args(args)
 
     branch = pargs.branch or self._current_branch()
     on = pargs.on or "master"
 
-    self._git_run("fetch", "origin", "+" + on + ":" + on)
+    self._git_run("fetch", "origin", "+" + on + ":" + on, "--prune")
     if branch != on:
-      self._git_run("rebase", on)
+      rebase_args = []
+      if pargs.interactive:
+        rebase_args = ["--interactive"]
+      self._git_run("rebase", on, *rebase_args)
 
   def do_publish(self, *args):
     """
@@ -152,9 +156,9 @@ class GFlow:
         continue
       if branch == current_branch:
         self._git_run("checkout", "master")
-      self._git_run("push", "origin", "--delete", branch)
       if pargs.rm:
         self._git_run("branch", "-d", branch)
+      self._git_run("push", "origin", "--delete", branch)
 
   def do_pr(self, *args):
     """Publishes a branch and opens a pull request in-browser."""
@@ -177,7 +181,7 @@ class GFlow:
     first_commit_msg = self._git_cap("log", "{}...{}".format(source, target),  "-1",  "--reverse",
       "--pretty=format:%s")
 
-    self._push(source, pargs.no_verify)
+    self._push(source, no_verify=pargs.no_verify, set_upstream=True)
 
     pr_url="https://github.com/{}/{}/compare/{}...{}?title={}".format(org, repo, target, source, first_commit_msg)
     print(pr_url)
@@ -203,7 +207,8 @@ class GFlow:
     # Push directly to origin, which will fail if not a fast-forward
     self._git_run("push", "origin", source + ":" + target, *extra_args)
     # Fetch back into the local
-    self._git_run("fetch", "origin", "{0}:{0}".format(target))
+    #self._git_run("fetch", "origin", "{0}:{0}".format(target))
+    self._git_run("push", ".", "origin/{0}:{0}".format(target))
 
     # Equivalent, faster, maybe less safe: push the same thing locally
     # self._git_run("push", ".", source + ":" + target, "--no-verify", *extra_args)
