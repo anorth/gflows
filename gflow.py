@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # Requires Python 3.6 or later
-"""
+r"""
 Alex's GitHub workflow scripts.
 
 These scripts automate complicated or multiple-step git commands to implement the workflow
 of working on branches which are continually rebased, reviewed as a GitHub pull request, and
-landed by fast-forwarding master.
+landed by fast-forwarding main.
 
 Typical usage:
   $ git checkout -b mybranch
   ...work work work...
   $ git commit -a
-  $ # pull master from origin and rebase this branch against it:
+  $ # pull main from origin and rebase this branch against it:
   $ gflow up
   $ # send a pull request for review
   $ gflow pr
@@ -31,7 +31,7 @@ Upcoming features fixes:
 - count the diff stat size and append a description to PR title
 - add commands for chaining a rebase through branches
 - add "rm" command to delete remote+local branch
-- cleanup origin: "git branch -r --merged master | grep anorth | sed 's/origin\///'  | xargs -n 1 git push --delete origin"
+- cleanup origin: "git branch -r --merged main | grep anorth | sed 's/origin\///'  | xargs -n 1 git push --delete origin"
 """
 
 import re
@@ -44,7 +44,7 @@ from subprocess import CalledProcessError
 
 
 # Matches an origin URI and extracts project and repo name, e.g. "git@github.com:{org}/{repo}.git"
-_ORIGIN_PATTERN = re.compile('[\w.@-]+:([\w.-]+)/([\w.-]+)\.git')
+_ORIGIN_PATTERN = re.compile(r'[\w.@-]+:([\w.-]+)/([\w.-]+)\.git')
 
 
 def main(argv):
@@ -98,14 +98,14 @@ class GFlow:
     print(self._current_branch())
 
   def do_up(self, *args):
-    """Fetches origin/master and rebases a branch."""
+    """Fetches origin/main and rebases a branch."""
     ap = ArgumentParser()
-    ap.add_argument("--on", help="Source branch to fetch and rebase on (defaults to master)")
+    ap.add_argument("--on", help="Source branch to fetch and rebase on (defaults to main)")
     ap.add_argument("branch", nargs='?', help="Branch name to update (defaults to current)")
     pargs = ap.parse_args(args)
 
     branch = pargs.branch or self._current_branch()
-    on = pargs.on or "master"
+    on = pargs.on or "main"
 
     self._git_run("fetch", "origin", "+" + on + ":" + on)
     if branch != on:
@@ -114,7 +114,7 @@ class GFlow:
   def do_publish(self, *args):
     """
     Pushes a branch (default: the current branch) to origin, overwriting it unconditionally.
-    Refuses to publish master.
+    Refuses to publish main.
     """
     self._no_changes()
 
@@ -124,15 +124,15 @@ class GFlow:
     pargs = ap.parse_args(args)
 
     source = pargs.source or self._current_branch()
-    if source == 'master':
-      raise FlowError("Refusing to publish master branch, use git push directly.")
+    if source == 'main' or source == 'master':
+      raise FlowError("Refusing to publish main branch, use git push directly.")
 
     self._push(source, no_verify=pargs.no_verify, set_upstream=True)
 
   def do_unpublish(self, *args):
     """
     Deletes a branch from the origin unconditionally.
-    Refuses to delete master.
+    Refuses to delete main.
     """
     ap = ArgumentParser()
     ap.add_argument("--rm", action='store_true', help="Removes local branch too")
@@ -147,11 +147,11 @@ class GFlow:
       branches = [current_branch]
 
     for branch in branches:
-      if branch == "master":
-        print("Refusing to delete master branch")
+      if branch == "main" or branch == "master":
+        print("Refusing to delete main branch")
         continue
       if branch == current_branch:
-        self._git_run("checkout", "master")
+        self._git_run("checkout", "main")
       self._git_run("push", "origin", "--delete", branch)
       if pargs.rm:
         self._git_run("branch", "-d", branch)
@@ -161,15 +161,15 @@ class GFlow:
     self._no_changes()
 
     ap = ArgumentParser()
-    ap.add_argument("--on", help="Target branch to compare changes with (defaults to master)")
+    ap.add_argument("--on", help="Target branch to compare changes with (defaults to main)")
     ap.add_argument("--no-verify", action='store_true', help="Skips pre-push hooks")
     ap.add_argument("source", nargs='?', help="Branch name to publish (defaults to current)")
     pargs = ap.parse_args(args)
 
     source = pargs.source or self._current_branch()
-    target = pargs.on or "master"
-    if source == 'master':
-      raise FlowError("Refusing to publish master branch.")
+    target = pargs.on or "main"
+    if source == 'main' or source == 'master':
+      raise FlowError("Refusing to publish main branch.")
 
 
     origin = self._git_cap("remote", "get-url", "origin")
@@ -185,17 +185,17 @@ class GFlow:
 
 
   def do_land(self, *args):
-    """Lands changes on origin/master and updates local refs."""
+    """Lands changes on origin/main and updates local refs."""
     self._no_changes()
 
     ap = ArgumentParser()
-    ap.add_argument("--on", help="Target branch to land changes on (defaults to master)")
+    ap.add_argument("--on", help="Target branch to land changes on (defaults to main)")
     ap.add_argument("--no-verify", action='store_true', help="Skips pre-push hooks")
     ap.add_argument("source", nargs='?', help="Ref name to land (defaults to HEAD)")
     pargs = ap.parse_args(args)
 
     source = pargs.source or self._current_branch()
-    target = pargs.on or "master"
+    target = pargs.on or "main"
     extra_args = []
     if pargs.no_verify:
       extra_args.append("--no-verify")
