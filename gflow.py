@@ -44,7 +44,7 @@ from subprocess import CalledProcessError
 
 
 # Matches an origin URI and extracts project and repo name, e.g. "git@github.com:{org}/{repo}.git"
-_ORIGIN_PATTERN = re.compile(r'[\w.@-]+:([\w.-]+)/([\w.-]+)\.git')
+_ORIGIN_PATTERN = re.compile(r'[\w.@-]+:([\w.-]+)/([\w.-]+)(\.git)?')
 
 
 def main(argv):
