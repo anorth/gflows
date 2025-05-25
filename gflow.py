@@ -107,7 +107,7 @@ class GFlow:
     branch = pargs.branch or self._current_branch()
     on = pargs.on or "main"
 
-    self._git_run("fetch", "origin", "+" + on + ":" + on)
+    self._git_run("fetch", "origin", "+"+on+":"+on)
     if branch != on:
       self._git_run("rebase", on)
 
@@ -127,7 +127,7 @@ class GFlow:
     if source == 'main' or source == 'master':
       raise FlowError("Refusing to publish main branch, use git push directly.")
 
-    self._push(source, no_verify=pargs.no_verify, set_upstream=True)
+    self._publish(source, no_verify=pargs.no_verify)
 
   def do_unpublish(self, *args):
     """
@@ -174,12 +174,10 @@ class GFlow:
 
     origin = self._git_cap("remote", "get-url", "origin")
     org, repo = _ORIGIN_PATTERN.match(origin).group(1, 2)
-    first_commit_msg = self._git_cap("log", "{}...{}".format(source, target),  "-1",  "--reverse",
-      "--pretty=format:%s")
 
-    self._push(source, pargs.no_verify)
+    self._publish(source, no_verify=pargs.no_verify)
 
-    pr_url="https://github.com/{}/{}/compare/{}...{}?title={}".format(org, repo, target, source, first_commit_msg)
+    pr_url="https://github.com/{}/{}/pull/new/{}".format(org, repo, source)
     print(pr_url)
     subprocess.run(["open", pr_url]) # For MacOS
 
@@ -211,12 +209,24 @@ class GFlow:
   def _current_branch(self) -> str:
     return self._git_cap("rev-parse", "--abbrev-ref", "HEAD").strip()
 
-  def _push(self, branch, no_verify=False, set_upstream=False):
-    extra_args = ["--force-with-lease"]
+  def _publish(self, branch, no_verify=False):
+    # Fetch origin first in order to push safely regardless of whether remote exists.
+    remote_exists = False
+    try:
+      self._git_run("fetch", "origin", branch)
+      remote_exists = True
+    except CalledProcessError:
+        pass # Branch doesn't exist on remote
+    self._push(branch, no_verify=no_verify, set_upstream=(not remote_exists), force=remote_exists)
+
+  def _push(self, branch, no_verify=False, set_upstream=False, force=False):
+    extra_args = []
     if no_verify:
       extra_args.append("--no-verify")
     if set_upstream:
       extra_args.append("--set-upstream")
+    if force:
+      extra_args.append("--force-with-lease")
 
     return self._git_run("push", "origin", "{0}:{0}".format(branch), *extra_args)
 
@@ -248,7 +258,7 @@ class GFlow:
 
   def _git_run(self, *args, quiet=False):
     """
-    Runs git without capturing output (it goes to this process's stdout/stderr
+    Runs git without capturing output (it goes to this process's stdout/stderr)
 
     Raises CalledProcessError if git exists with non-zero status.
     """
